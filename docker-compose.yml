@@ -1,0 +1,30 @@
+version: "3.9"
+
+# Local development convenience. Production deploys to Render as two
+# separate services (see README) — this compose file is NOT what gets
+# deployed, it just mirrors that shape locally so `docker compose up`
+# gives you a working stack against MongoDB Atlas.
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - PORT=8000
+    volumes:
+      - ./backend/app:/app/app  # live-reload friendly for local dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    env_file:
+      - ./frontend/.env
+    volumes:
+      - ./frontend/src:/app/src
+    command: npm run dev -- --host 0.0.0.0

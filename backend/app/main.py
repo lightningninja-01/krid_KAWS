@@ -1,0 +1,103 @@
+"""
+FastAPI application factory.
+
+Wires process-level singletons (Mongo connection, Meta client, LLM/vision
+services, typing heartbeat, the compiled LangGraph) on app.state during
+startup via the lifespan context manager — these are expensive-ish to
+construct and hold external connections, so they're built once and reused
+for the process lifetime, not per-request.
+"""
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.routers import broadcast, messages, sessions, tenants, webhook
+from app.config.settings import get_settings
+from app.database.connection import mongo_connection
+from app.database.repositories.message_repository import MessageRepository
+from app.database.repositories.session_repository import SessionRepository
+from app.database.repositories.tenant_repository import TenantRepository
+from app.exceptions.handlers import register_exception_handlers
+from app.graph.builder import build_conversation_graph
+from app.graph.dependencies import GraphDependencies
+from app.services.llm_service import LLMService
+from app.services.typing_heartbeat import TypingHeartbeatService
+from app.services.vision_service import VisionService
+from app.services.whatsapp_client import WhatsAppClient
+from app.utils.logger import get_logger
+
+log = get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+
+    await mongo_connection.connect()
+
+    # --- Process-level service singletons ---
+    whatsapp_client = WhatsAppClient()
+    llm_service = LLMService()
+    vision_service = VisionService(whatsapp_client)
+    typing_heartbeat = TypingHeartbeatService(whatsapp_client)
+
+    app.state.whatsapp_client = whatsapp_client
+    app.state.llm_service = llm_service
+    app.state.vision_service = vision_service
+    app.state.typing_heartbeat = typing_heartbeat
+
+    # --- Graph, compiled once and reused for every conversation turn ---
+    db = mongo_connection.db
+    graph_deps = GraphDependencies(
+        tenant_repo=TenantRepository(db),
+        session_repo=SessionRepository(db),
+        message_repo=MessageRepository(db),
+        whatsapp_client=whatsapp_client,
+        llm_service=llm_service,
+        vision_service=vision_service,
+        typing_heartbeat=typing_heartbeat,
+    )
+    app.state.graph_deps = graph_deps
+    app.state.compiled_graph = build_conversation_graph(graph_deps)
+
+    log.info(f"{settings.app_name} started in '{settings.environment}' mode")
+    yield
+
+    await mongo_connection.disconnect()
+    log.info("Application shutdown complete")
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+    app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    register_exception_handlers(app)
+
+    app.include_router(webhook.router, prefix="/api/webhooks", tags=["webhook"])
+    app.include_router(tenants.router, prefix="/api/tenants", tags=["tenants"])
+    app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
+    app.include_router(messages.router, prefix="/api/messages", tags=["messages"])
+    app.include_router(broadcast.router, prefix="/api/broadcast", tags=["broadcast"])
+
+    @app.get("/")
+    async def root_redirect():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/docs")
+
+    @app.get("/health")
+    async def health_check() -> dict:
+        return {"status": "ok", "app": settings.app_name}
+
+    return app
+
+
+app = create_app()
