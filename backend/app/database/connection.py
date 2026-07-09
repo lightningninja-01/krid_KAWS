@@ -8,7 +8,6 @@ NOT create a new client per request, that defeats pooling entirely).
 Falls back to mongomock_motor for local development if real MongoDB is unavailable.
 """
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from mongomock_motor import AsyncMongoMockClient
 
 from app.config.settings import get_settings
 from app.utils.logger import get_logger
@@ -37,6 +36,7 @@ class MongoConnection:
             log.info(f"Connected to MongoDB database '{settings.mongodb_db_name}'")
         except Exception as e:
             log.warning(f"Failed to connect to MongoDB ({type(e).__name__}): {e}. Falling back to in-memory mock for development.")
+            from mongomock_motor import AsyncMongoMockClient
             self._client = AsyncMongoMockClient()
             self._db = self._client[settings.mongodb_db_name]
             await self._ensure_indexes()
