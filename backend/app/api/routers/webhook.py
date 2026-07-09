@@ -106,6 +106,7 @@ async def _process_message(request: Request, inbound: WebhookInboundMessage, pho
         "tenant_id": tenant.id,
         "session_id": session.id,
         "customer_phone": inbound.from_,
+        "phone_number_id": phone_number_id,
         "incoming_message": incoming_message,
     }
 
@@ -114,3 +115,4 @@ async def _process_message(request: Request, inbound: WebhookInboundMessage, pho
         f"message_type={message_type}"
     )
     await compiled_graph.ainvoke(initial_state)
+

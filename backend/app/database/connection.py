@@ -4,8 +4,11 @@ MongoDB connection lifecycle, using Motor (async driver).
 A single AsyncIOMotorClient is created on app startup and reused for the
 process lifetime (Motor manages its own connection pool internally — do
 NOT create a new client per request, that defeats pooling entirely).
+
+Falls back to mongomock_motor for local development if real MongoDB is unavailable.
 """
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from mongomock_motor import AsyncMongoMockClient
 
 from app.config.settings import get_settings
 from app.utils.logger import get_logger
@@ -25,12 +28,19 @@ class MongoConnection:
 
     async def connect(self) -> None:
         settings = get_settings()
-        self._client = AsyncIOMotorClient(settings.mongodb_uri)
-        self._db = self._client[settings.mongodb_db_name]
-        # Fail fast on startup if Atlas is unreachable, rather than on first request.
-        await self._client.admin.command("ping")
-        await self._ensure_indexes()
-        log.info(f"Connected to MongoDB database '{settings.mongodb_db_name}'")
+        try:
+            self._client = AsyncIOMotorClient(settings.mongodb_uri)
+            self._db = self._client[settings.mongodb_db_name]
+            # Fail fast on startup if Atlas is unreachable, rather than on first request.
+            await self._client.admin.command("ping")
+            await self._ensure_indexes()
+            log.info(f"Connected to MongoDB database '{settings.mongodb_db_name}'")
+        except Exception as e:
+            log.warning(f"Failed to connect to MongoDB ({type(e).__name__}): {e}. Falling back to in-memory mock for development.")
+            self._client = AsyncMongoMockClient()
+            self._db = self._client[settings.mongodb_db_name]
+            await self._ensure_indexes()
+            log.info(f"Using in-memory mongomock database '{settings.mongodb_db_name}' for development")
 
     async def disconnect(self) -> None:
         if self._client is not None:

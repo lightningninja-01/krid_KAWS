@@ -50,6 +50,7 @@ class ConversationState(TypedDict, total=False):
     tenant_id: str
     session_id: str
     customer_phone: str
+    phone_number_id: str
 
     # --- Acknowledge node output ---
     incoming_message: IncomingMessage
@@ -71,3 +72,5 @@ class ConversationState(TypedDict, total=False):
 
     # --- Error short-circuit ---
     error: str | None
+
+

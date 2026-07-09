@@ -24,10 +24,10 @@ class TypingHeartbeatService:
         self._interval = get_settings().typing_heartbeat_interval_seconds
         # Track the anchor message ID per session so the heartbeat loop can
         # keep re-sending typing_indicator against the correct inbound message.
-        self._anchor_message_ids: dict[str, str] = {}
+        self._anchors: dict[str, tuple[str, str | None]] = {}
 
-    async def start(self, session_id: str, meta_message_id: str) -> None:
-        self._anchor_message_ids[session_id] = meta_message_id
+    async def start(self, session_id: str, meta_message_id: str, phone_number_id: str | None = None) -> None:
+        self._anchors[session_id] = (meta_message_id, phone_number_id)
         task_registry.spawn(
             f"typing:{session_id}",
             self._heartbeat_loop(session_id),
@@ -36,16 +36,19 @@ class TypingHeartbeatService:
 
     async def stop(self, session_id: str) -> None:
         task_registry.cancel(f"typing:{session_id}")
-        self._anchor_message_ids.pop(session_id, None)
+        self._anchors.pop(session_id, None)
 
     async def _heartbeat_loop(self, session_id: str) -> None:
         # Fire once immediately, then keep re-firing on an interval until cancelled.
         while True:
-            meta_message_id = self._anchor_message_ids.get(session_id)
-            if meta_message_id is None:
+            anchor = self._anchors.get(session_id)
+            if anchor is None:
                 return
+            meta_message_id, phone_number_id = anchor
             try:
-                await self._client.send_typing_indicator(meta_message_id)
+                await self._client.send_typing_indicator(meta_message_id, phone_number_id=phone_number_id)
             except Exception as exc:  # noqa: BLE001 — a missed heartbeat tick shouldn't kill the loop
                 log.warning(f"Typing heartbeat tick failed for session {session_id}: {exc!r}")
             await asyncio.sleep(self._interval)
+
+

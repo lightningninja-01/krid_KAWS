@@ -1,9 +1,9 @@
 """
-WhatsApp Cloud API client — wraps every Meta Graph API call this app makes.
+WhatsApp Cloud API client - wraps every Meta Graph API call this app makes.
 
 Retry policy: exponential backoff on 5xx/timeout/connection errors only.
 4xx errors mean the payload itself is wrong (bad phone number, expired
-token, malformed template) — retrying won't fix that, so we fail fast and
+token, malformed template) - retrying won't fix that, so we fail fast and
 surface a typed MetaAPIError instead of burning retries on a guaranteed
 failure.
 """
@@ -31,8 +31,9 @@ class WhatsAppClient:
             "Content-Type": "application/json",
         }
 
-    async def _post(self, payload: dict) -> dict:
-        url = f"{self._base_url}/{self._phone_number_id}/messages"
+    async def _post(self, payload: dict, *, phone_number_id: str | None = None) -> dict:
+        outbound_phone_number_id = phone_number_id or self._phone_number_id
+        url = f"{self._base_url}/{outbound_phone_number_id}/messages"
         last_error: Exception | None = None
 
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -45,9 +46,9 @@ class WhatsAppClient:
                             response_body=response.text,
                         )
                     if response.status_code >= 400:
-                        # Client error — payload/auth issue. Don't retry, fail immediately.
+                        # Client error: payload/auth issue. Don't retry, fail immediately.
                         raise MetaAPIError(
-                            f"Meta API rejected request (status {response.status_code})",
+                            f"Meta API rejected request (status {response.status_code}): {response.text}",
                             response_body=response.text,
                             status_code=response.status_code,
                         )
@@ -64,14 +65,14 @@ class WhatsAppClient:
 
         raise last_error if last_error else MetaAPIError("Meta API call failed for an unknown reason")
 
-    async def mark_as_read(self, meta_message_id: str) -> None:
+    async def mark_as_read(self, meta_message_id: str, *, phone_number_id: str | None = None) -> None:
         await self._post({
             "messaging_product": "whatsapp",
             "status": "read",
             "message_id": meta_message_id,
-        })
+        }, phone_number_id=phone_number_id)
 
-    async def send_typing_indicator(self, meta_message_id: str) -> None:
+    async def send_typing_indicator(self, meta_message_id: str, *, phone_number_id: str | None = None) -> None:
         """
         Meta's typing indicator is anchored to the message being replied to.
         Called repeatedly by the heartbeat service since the indicator
@@ -82,40 +83,55 @@ class WhatsAppClient:
             "status": "read",
             "message_id": meta_message_id,
             "typing_indicator": {"type": "text"},
-        })
+        }, phone_number_id=phone_number_id)
 
-    async def send_text(self, to_phone: str, body: str) -> str:
+    async def send_text(self, to_phone: str, body: str, *, phone_number_id: str | None = None) -> str:
         result = await self._post({
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to_phone,
             "type": "text",
             "text": {"body": body, "preview_url": False},
-        })
+        }, phone_number_id=phone_number_id)
         return _extract_message_id(result)
 
-    async def send_image(self, to_phone: str, image_url: str, caption: str = "") -> str:
+    async def send_image(
+        self,
+        to_phone: str,
+        image_url: str,
+        caption: str = "",
+        *,
+        phone_number_id: str | None = None,
+    ) -> str:
         result = await self._post({
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to_phone,
             "type": "image",
             "image": {"link": image_url, "caption": caption},
-        })
+        }, phone_number_id=phone_number_id)
         return _extract_message_id(result)
 
-    async def send_document(self, to_phone: str, document_url: str, filename: str, caption: str = "") -> str:
+    async def send_document(
+        self,
+        to_phone: str,
+        document_url: str,
+        filename: str,
+        caption: str = "",
+        *,
+        phone_number_id: str | None = None,
+    ) -> str:
         result = await self._post({
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to_phone,
             "type": "document",
             "document": {"link": document_url, "filename": filename, "caption": caption},
-        })
+        }, phone_number_id=phone_number_id)
         return _extract_message_id(result)
 
     async def send_template(self, to_phone: str, template_name: str, params: list[str]) -> str:
-        """Used by the broadcast service — WhatsApp requires pre-approved templates for outbound-initiated messages."""
+        """Used by the broadcast service; WhatsApp requires pre-approved templates for outbound-initiated messages."""
         components = [{"type": "body", "parameters": [{"type": "text", "text": p} for p in params]}] if params else []
         result = await self._post({
             "messaging_product": "whatsapp",

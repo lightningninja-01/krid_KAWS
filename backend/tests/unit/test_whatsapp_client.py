@@ -52,3 +52,15 @@ class TestRetryPolicy:
             await client.send_text("1555", "hello")
 
         assert route.call_count == 3
+
+    @respx.mock
+    async def test_can_send_from_webhook_phone_number_id(self, client):
+        route = respx.post(url__regex=r"https://graph\.facebook\.com/v[0-9.]+/inbound-phone-id/messages").mock(
+            return_value=httpx.Response(200, json={"messages": [{"id": "wamid.success"}]})
+        )
+
+        message_id = await client.send_text("1555", "hello", phone_number_id="inbound-phone-id")
+
+        assert message_id == "wamid.success"
+        assert route.call_count == 1
+

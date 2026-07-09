@@ -29,12 +29,13 @@ def build_handover_node(deps: GraphDependencies):
         tenant_id = state["tenant_id"]
         session_id = state["session_id"]
         customer_phone = state["customer_phone"]
+        phone_number_id = state.get("phone_number_id")
         node_log = get_logger(__name__, tenant_id=tenant_id, session_id=session_id)
 
         await deps.session_repo.update_status(tenant_id, session_id, SessionStatus.NEEDS_HUMAN)
 
         try:
-            meta_id = await deps.whatsapp_client.send_text(customer_phone, HANDOVER_MESSAGE)
+            meta_id = await deps.whatsapp_client.send_text(customer_phone, HANDOVER_MESSAGE, phone_number_id=phone_number_id)
             success, error_message = True, None
         except Exception as exc:  # noqa: BLE001
             node_log.error(f"Failed to send handover message: {exc!r}")
@@ -60,3 +61,5 @@ def build_handover_node(deps: GraphDependencies):
         return {"dispatch_result": {"success": success, "meta_message_id": meta_id, "error_message": error_message}}
 
     return handover
+
+

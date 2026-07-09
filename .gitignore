@@ -18,3 +18,7 @@ frontend/dist/
 .vscode/
 .idea/
 .DS_Store
+
+# Runtime artifacts
+*.log
+tools/cloudflared.exe

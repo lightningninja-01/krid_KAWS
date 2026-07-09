@@ -7,6 +7,7 @@ validated ReplyDecision or a clear failure — never a half-parseable string.
 """
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
 from app.config.settings import get_settings
 from app.exceptions.custom_exceptions import LLMReasoningError
@@ -14,6 +15,29 @@ from app.graph.state import IncomingMessage, ReplyDecision
 from app.utils.logger import get_logger
 
 log = get_logger(__name__)
+
+
+class GeminiReplyDecision(BaseModel):
+    """Gemini-compatible response schema.
+
+    google-genai 0.3.0 rejects nullable/union fields in response_schema, so
+    media_asset_key uses an empty string for "no media" and is normalized back
+    to ReplyDecision at the service boundary.
+    """
+
+    reply_type: str = Field(description='One of: "text", "image", or "document".')
+    text_content: str = Field(description="The message text. Always populated, even for media replies.")
+    media_asset_key: str = Field(
+        default="",
+        description="Exact media key for image/document replies, or an empty string for text replies.",
+    )
+    sentiment_score: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="0.0 = calm/satisfied, 1.0 = highly frustrated.",
+    )
+    needs_human: bool = Field(default=False)
+    reasoning: str = Field(default="", description="Brief internal rationale.")
 
 
 class LLMService:
@@ -46,13 +70,14 @@ class LLMService:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_schema=ReplyDecision,
+                    response_schema=GeminiReplyDecision,
                     temperature=0.3,
                 ),
             )
-            decision = response.parsed
-            if not decision:
+            parsed = response.parsed
+            if not parsed:
                 raise LLMReasoningError("Gemini returned empty or invalid response.")
+            decision = self._normalize_decision(parsed)
         except Exception as exc:  # noqa: BLE001
             raise LLMReasoningError(str(exc)) from exc
 
@@ -62,6 +87,17 @@ class LLMService:
             decision.needs_human = True
 
         return decision
+
+    def _normalize_decision(self, decision: GeminiReplyDecision | ReplyDecision) -> ReplyDecision:
+        media_asset_key = decision.media_asset_key.strip() or None
+        return ReplyDecision(
+            reply_type=decision.reply_type,
+            text_content=decision.text_content,
+            media_asset_key=media_asset_key,
+            sentiment_score=decision.sentiment_score,
+            needs_human=decision.needs_human,
+            reasoning=decision.reasoning,
+        )
 
     def _build_prompt(
         self,

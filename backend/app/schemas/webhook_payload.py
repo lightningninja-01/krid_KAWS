@@ -9,14 +9,16 @@ convenience accessor that extracts what the Acknowledge node actually
 needs — keeps the rest of the codebase from having to know Meta's payload
 shape at all.
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class WebhookTextContent(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     body: str
 
 
 class WebhookMediaContent(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     id: str
     mime_type: str | None = None
     sha256: str | None = None
@@ -24,6 +26,7 @@ class WebhookMediaContent(BaseModel):
 
 
 class WebhookInboundMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
     id: str
     from_: str  # 'from' is a reserved word in Python
     timestamp: str
@@ -32,8 +35,6 @@ class WebhookInboundMessage(BaseModel):
     image: WebhookMediaContent | None = None
     document: WebhookMediaContent | None = None
 
-    model_config = {"populate_by_name": True}
-
     def __init__(self, **data):
         if "from" in data:
             data["from_"] = data.pop("from")
@@ -41,16 +42,19 @@ class WebhookInboundMessage(BaseModel):
 
 
 class WebhookMetadata(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     display_phone_number: str | None = None
     phone_number_id: str
 
 
 class WebhookContact(BaseModel):
-    wa_id: str
+    model_config = ConfigDict(extra="ignore")
+    wa_id: str | None = None
     profile: dict | None = None
 
 
 class WebhookValue(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     messaging_product: str
     metadata: WebhookMetadata
     contacts: list[WebhookContact] | None = None
@@ -59,16 +63,19 @@ class WebhookValue(BaseModel):
 
 
 class WebhookChange(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     value: WebhookValue
     field: str
 
 
 class WebhookEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     id: str
     changes: list[WebhookChange]
 
 
 class WebhookPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     object: str
     entry: list[WebhookEntry]
 

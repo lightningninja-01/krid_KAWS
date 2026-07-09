@@ -20,6 +20,7 @@ def build_dispatcher_node(deps: GraphDependencies):
         tenant_id = state["tenant_id"]
         session_id = state["session_id"]
         customer_phone = state["customer_phone"]
+        phone_number_id = state.get("phone_number_id")
         decision = state["reply_decision"]
         node_log = get_logger(__name__, tenant_id=tenant_id, session_id=session_id)
 
@@ -30,18 +31,18 @@ def build_dispatcher_node(deps: GraphDependencies):
 
         try:
             if decision.reply_type == "text":
-                meta_id = await deps.whatsapp_client.send_text(customer_phone, decision.text_content)
+                meta_id = await deps.whatsapp_client.send_text(customer_phone, decision.text_content, phone_number_id=phone_number_id)
 
             elif decision.reply_type == "image":
                 url = _resolve_media_url(state["media_library"], decision.media_asset_key, tenant_id)
-                meta_id = await deps.whatsapp_client.send_image(customer_phone, url, caption=decision.text_content)
+                meta_id = await deps.whatsapp_client.send_image(customer_phone, url, caption=decision.text_content, phone_number_id=phone_number_id)
                 media_attachment = MediaAttachment(url=url, mime_type="image/jpeg")
 
             elif decision.reply_type == "document":
                 url = _resolve_media_url(state["media_library"], decision.media_asset_key, tenant_id)
                 filename = decision.media_asset_key or "document.pdf"
                 meta_id = await deps.whatsapp_client.send_document(
-                    customer_phone, url, filename=filename, caption=decision.text_content
+                    customer_phone, url, filename=filename, caption=decision.text_content, phone_number_id=phone_number_id
                 )
                 media_attachment = MediaAttachment(url=url, mime_type="application/pdf", filename=filename)
 
@@ -77,3 +78,5 @@ def _resolve_media_url(media_library: dict[str, str], asset_key: str | None, ten
     if not asset_key or asset_key not in media_library:
         raise MediaAssetNotFoundError(asset_key or "<none>", tenant_id)
     return media_library[asset_key]
+
+
