@@ -64,22 +64,40 @@ class LLMService:
             media_description=media_description,
         )
 
-        try:
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=GeminiReplyDecision,
-                    temperature=0.3,
-                ),
-            )
-            parsed = response.parsed
-            if not parsed:
-                raise LLMReasoningError("Gemini returned empty or invalid response.")
-            decision = self._normalize_decision(parsed)
-        except Exception as exc:  # noqa: BLE001
-            raise LLMReasoningError(str(exc)) from exc
+        import asyncio
+        max_retries = 3
+        backoff_seconds = 0.5
+
+        for attempt in range(max_retries):
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=self._model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=GeminiReplyDecision,
+                        temperature=0.3,
+                    ),
+                )
+                parsed = response.parsed
+                if not parsed:
+                    raise LLMReasoningError("Gemini returned empty or invalid response.")
+                decision = self._normalize_decision(parsed)
+                break
+            except Exception as exc:  # noqa: BLE001
+                exc_str = str(exc)
+                is_transient = any(status in exc_str for status in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "overloaded"])
+                
+                if is_transient and attempt < max_retries - 1:
+                    log.warning(
+                        f"Gemini API transient error (attempt {attempt + 1}/{max_retries}): {exc!r}. "
+                        f"Retrying in {backoff_seconds}s..."
+                    )
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds *= 2  # Exponential backoff
+                else:
+                    log.error(f"Gemini API failed after {attempt + 1} attempts: {exc!r}")
+                    raise LLMReasoningError(str(exc)) from exc
 
         # Belt-and-suspenders: sentiment threshold enforced in code too, not
         # solely trusted from the model's own needs_human flag.

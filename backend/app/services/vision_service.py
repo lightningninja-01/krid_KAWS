@@ -35,18 +35,38 @@ class VisionService:
                 mime_type='image/jpeg'
             )
 
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents=[
-                    "Briefly describe this image in one or two sentences, "
-                    "focusing on details relevant to a customer support/sales context "
-                    "(e.g. product shown, visible damage, color, condition).",
-                    image_part
-                ],
-                config=types.GenerateContentConfig(
-                    max_output_tokens=150,
-                )
-            )
-            return response.text or "(no description generated)"
+            import asyncio
+            max_retries = 3
+            backoff_seconds = 0.5
+
+            for attempt in range(max_retries):
+                try:
+                    response = await self._client.aio.models.generate_content(
+                        model=self._model,
+                        contents=[
+                            "Briefly describe this image in one or two sentences, "
+                            "focusing on details relevant to a customer support/sales context "
+                            "(e.g. product shown, visible damage, color, condition).",
+                            image_part
+                        ],
+                        config=types.GenerateContentConfig(
+                            max_output_tokens=150,
+                        )
+                    )
+                    return response.text or "(no description generated)"
+                except Exception as exc:  # noqa: BLE001
+                    exc_str = str(exc)
+                    is_transient = any(status in exc_str for status in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "overloaded"])
+                    
+                    if is_transient and attempt < max_retries - 1:
+                        log.warning(
+                            f"Gemini Vision API transient error (attempt {attempt + 1}/{max_retries}): {exc!r}. "
+                            f"Retrying in {backoff_seconds}s..."
+                        )
+                        await asyncio.sleep(backoff_seconds)
+                        backoff_seconds *= 2
+                    else:
+                        log.error(f"Gemini Vision API failed after {attempt + 1} attempts: {exc!r}")
+                        raise LLMReasoningError(f"Vision description failed: {exc}") from exc
         except Exception as exc:  # noqa: BLE001
             raise LLMReasoningError(f"Vision description failed: {exc}") from exc
