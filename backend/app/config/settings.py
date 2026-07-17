@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = Field(
         default="http://localhost:5173,http://localhost:4173,https://krid-kaws-1.onrender.com"
     )
+    cors_allowed_origin_regex: str | None = Field(default=r"https://.*\.onrender\.com")
 
     # --- MongoDB ---
     mongodb_uri: str = Field(..., description="MongoDB Atlas connection string")
