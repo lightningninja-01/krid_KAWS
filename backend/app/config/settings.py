@@ -28,7 +28,9 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     # Comma-separated origins in the env var, e.g. "https://app.example.com,http://localhost:5173"
-    cors_allowed_origins: str = Field(default="http://localhost:5173")
+    cors_allowed_origins: str = Field(
+        default="http://localhost:5173,http://localhost:4173,https://krid-kaws-1.onrender.com"
+    )
 
     # --- MongoDB ---
     mongodb_uri: str = Field(..., description="MongoDB Atlas connection string")

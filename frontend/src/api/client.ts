@@ -3,7 +3,16 @@
 // fetch() Response objects directly.
 import type { BroadcastRequest, BroadcastResult, Message, Session, Tenant } from "../types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const isLocalHost =
+  typeof window !== "undefined" &&
+  ["localhost", "127.0.0.1"].includes(window.location.hostname);
+
+const API_BASE_URL = configuredApiBaseUrl || (isLocalHost ? "http://localhost:8000" : "");
+
+if (!API_BASE_URL) {
+  throw new Error("Missing VITE_API_BASE_URL. Set it to your backend Render URL.");
+}
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
